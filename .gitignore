@@ -1,0 +1,30 @@
+# Build
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# Logs
+*.log
+
+# Publish
+publish/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NuGet
+*.nupkg
+
+# Docker
+docker-compose.override.yml
