@@ -1,0 +1,984 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BirdTaxonomy — Gestión de Taxones</title>
+    <!--
+    ═══════════════════════════════════════════════════════════════
+    BIRDTAXONOMY — CLIENTE CRUD  |  Estilo: Frutiger Aero
+    ═══════════════════════════════════════════════════════════════
+    Rutas consumidas:
+      GET    /api/taxonomia/rangos
+      GET    /api/taxonomia/taxones
+      GET    /api/taxonomia/taxones/{id}
+      POST   /api/taxonomia/taxones
+      PUT    /api/taxonomia/taxones/{id}
+      DELETE /api/taxonomia/taxones/{id}
+
+    Convención JSON: camelCase (.NET 8 JsonNamingPolicy.CamelCase)
+    Propiedades: taxonId | nombreCientifico | rangoId | nombreRango
+                 speciesInfo.nombreComun | .descripcion | .domesticada
+                 .estadoConservacion | .ubicacionGeografica
+
+    Despliegue rápido:
+      Copia a BirdTaxonomy.API/wwwroot/index.html
+      Si usas otro origen → añade CORS en Program.cs:
+        builder.Services.AddCors(o => o.AddPolicy("SpaPolicy",
+          p => p.WithOrigins("http://localhost:5500").AllowAnyMethod().AllowAnyHeader()));
+        app.UseCors("SpaPolicy");
+    Swagger: https://localhost:7199/swagger/index.html
+    ═══════════════════════════════════════════════════════════════
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&family=Nunito+Sans:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐦</text></svg>">    <style>
+        :root {
+            --sky0: #e8f6ff;
+            --sky1: #b8e8fc;
+            --sky2: #7ecef5;
+            --sky3: #3aaeef;
+            --sky4: #0d87d4;
+            --sky5: #0558a0;
+            --leaf0: #d4f5dc;
+            --leaf1: #8edc9f;
+            --leaf2: #3db85a;
+            --leaf3: #1a7a38;
+            --sun1: #ffe566;
+            --sun2: #ffc400;
+            --coral1: #ff9a7a;
+            --coral2: #f04820;
+            --lav1: #c8b0f8;
+            --lav2: #8855e0;
+            --text: #082840;
+            --text2: #1e5080;
+            --text3: #4a80aa;
+            --glass: rgba(255,255,255,0.50);
+            --glass2: rgba(255,255,255,0.32);
+            --gbdr: rgba(255,255,255,0.72);
+            --gbdr2: rgba(200,235,255,0.55);
+            --shadow: 0 8px 32px rgba(8,80,160,0.18),0 2px 6px rgba(8,80,160,0.10);
+            --radius: 14px;
+            --radius-lg: 22px;
+            --font: 'Nunito',system-ui,sans-serif;
+            --font2: 'Nunito Sans',system-ui,sans-serif;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        html {
+            scroll-behavior: smooth
+        }
+
+        body {
+            font-family: var(--font);
+            font-size: 14px;
+            color: var(--text);
+            min-height: 100vh;
+            background: radial-gradient(ellipse 110% 55% at 85% -5%,#b0edd8 0%,transparent 52%), radial-gradient(ellipse 80% 60% at 5% 90%,#c0daff 0%,transparent 55%), radial-gradient(ellipse 70% 45% at 55% 55%,#d8f4ff 0%,transparent 65%), linear-gradient(155deg,#c8e8ff 0%,#a8d8f0 28%,#b8eecc 62%,#cce8ff 100%);
+            background-attachment: fixed;
+        }
+            /* decorative orbs */
+            body::before, body::after {
+                content: '';
+                position: fixed;
+                border-radius: 50%;
+                pointer-events: none;
+                z-index: 0
+            }
+
+            body::before {
+                width: 540px;
+                height: 540px;
+                top: -200px;
+                right: -160px;
+                background: radial-gradient(circle,rgba(100,210,255,0.32) 0%,rgba(160,230,255,0.08) 68%,transparent 100%)
+            }
+
+            body::after {
+                width: 420px;
+                height: 420px;
+                bottom: -130px;
+                left: -110px;
+                background: radial-gradient(circle,rgba(80,220,140,0.28) 0%,rgba(140,240,190,0.07) 68%,transparent 100%)
+            }
+
+        /* ── Header ── */
+        header {
+            position: relative;
+            z-index: 10;
+            background: linear-gradient(130deg,rgba(5,88,160,0.84) 0%,rgba(0,155,110,0.80) 100%);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border-bottom: 1px solid rgba(255,255,255,0.32);
+            padding: 0 2.5rem;
+            height: 66px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            box-shadow: 0 4px 28px rgba(8,80,160,0.28);
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.20);
+            border: 1.5px solid rgba(255,255,255,0.50);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.18),inset 0 1px 0 rgba(255,255,255,0.40);
+        }
+
+        header h1 {
+            font-weight: 800;
+            font-size: 1.38rem;
+            color: #fff;
+            letter-spacing: -0.3px;
+            text-shadow: 0 1px 10px rgba(0,80,160,0.28)
+        }
+
+            header h1 span {
+                font-weight: 300;
+                opacity: 0.85
+            }
+
+        .hpill {
+            background: rgba(255,255,255,0.18);
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.92);
+            padding: 3px 12px;
+        }
+
+        /* ── Layout ── */
+        main {
+            position: relative;
+            z-index: 1;
+            max-width: 1320px;
+            margin: 0 auto;
+            padding: 2rem 2rem 5rem;
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 1.5rem;
+            align-items: start
+        }
+
+        @media(max-width:920px) {
+            main {
+                grid-template-columns: 1fr
+            }
+        }
+
+        /* ── Glass panel ── */
+        .glass {
+            background: var(--glass);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
+            border: 1.5px solid var(--gbdr);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+        }
+
+        .panel {
+            padding: 1.6rem
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.4rem;
+            padding-bottom: 1rem;
+            border-bottom: 1.5px solid rgba(255,255,255,0.55);
+        }
+
+        .panel-head-title {
+            font-size: 1rem;
+            font-weight: 800;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 8px
+        }
+
+        .pill {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 3px 11px;
+            border-radius: 20px;
+            border: 1.5px solid transparent
+        }
+
+        .pill-c {
+            background: linear-gradient(135deg,#3db85a,#1a7a38);
+            color: #fff;
+            border-color: rgba(255,255,255,0.35);
+            box-shadow: 0 2px 8px rgba(30,140,60,0.30)
+        }
+
+        .pill-e {
+            background: linear-gradient(135deg,#ffd040,#f0a000);
+            color: #5a3000;
+            border-color: rgba(255,255,255,0.40);
+            box-shadow: 0 2px 8px rgba(200,130,0,0.28)
+        }
+
+        /* ── Fields ── */
+        .field {
+            margin-bottom: 1rem
+        }
+
+        label {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: var(--text2);
+            margin-bottom: 5px
+        }
+
+            label .req {
+                color: var(--coral2);
+                margin-left: 2px
+            }
+
+        input, select, textarea {
+            width: 100%;
+            background: rgba(255,255,255,0.62);
+            border: 1.5px solid rgba(160,215,255,0.65);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: var(--font2);
+            font-size: 14px;
+            padding: 9px 13px;
+            outline: none;
+            appearance: none;
+            transition: border-color .18s,box-shadow .18s,background .18s;
+        }
+
+            input:focus, select:focus, textarea:focus {
+                background: rgba(255,255,255,0.88);
+                border-color: var(--sky3);
+                box-shadow: 0 0 0 3px rgba(58,174,239,0.18),0 2px 8px rgba(8,100,200,0.10);
+            }
+
+            input.error, select.error, textarea.error {
+                border-color: var(--coral2);
+                box-shadow: 0 0 0 3px rgba(240,72,32,0.14)
+            }
+
+        textarea {
+            resize: vertical;
+            min-height: 70px
+        }
+
+        select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%230d87d4' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 13px center;
+            padding-right: 32px;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: var(--text3);
+            margin-top: 4px
+        }
+
+        .field-error {
+            font-size: 11px;
+            color: var(--coral2);
+            font-weight: 700;
+            margin-top: 4px;
+            display: none
+        }
+
+            .field-error.show {
+                display: block
+            }
+
+        /* ── Checkbox row ── */
+        .check-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 13px;
+            background: rgba(255,255,255,0.42);
+            border: 1.5px solid rgba(160,215,255,0.50);
+            border-radius: var(--radius);
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+
+            .check-row input[type=checkbox] {
+                width: 17px;
+                height: 17px;
+                accent-color: var(--sky4);
+                cursor: pointer;
+                padding: 0
+            }
+
+            .check-row label {
+                text-transform: none;
+                letter-spacing: normal;
+                font-size: 13px;
+                font-weight: 600;
+                color: var(--text);
+                margin: 0;
+                cursor: pointer
+            }
+
+        /* ── Species toggle ── */
+        .sp-toggle {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            cursor: pointer;
+            user-select: none;
+            padding: 9px 14px;
+            margin: .2rem 0 .75rem;
+            background: linear-gradient(135deg,rgba(60,184,90,0.15),rgba(58,174,239,0.12));
+            border: 1.5px solid rgba(80,200,140,0.38);
+            border-radius: var(--radius);
+            transition: background .18s;
+        }
+
+            .sp-toggle:hover {
+                background: linear-gradient(135deg,rgba(60,184,90,0.26),rgba(58,174,239,0.20))
+            }
+
+        .sp-arrow {
+            font-size: 12px;
+            transition: transform .20s;
+            color: var(--leaf2)
+        }
+
+            .sp-arrow.open {
+                transform: rotate(90deg)
+            }
+
+        .sp-lbl {
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--leaf3)
+        }
+
+        .sp-section {
+            display: none
+        }
+
+            .sp-section.open {
+                display: block
+            }
+
+        .sp-inner {
+            padding: 1.1rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg,rgba(190,245,215,0.35),rgba(170,228,255,0.25));
+            border: 1.5px solid rgba(80,210,155,0.32);
+            border-radius: var(--radius);
+        }
+
+        /* ── Buttons ── */
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap
+        }
+
+        button {
+            font-family: var(--font);
+            font-size: 13px;
+            font-weight: 700;
+            padding: 9px 20px;
+            border-radius: var(--radius);
+            border: 1.5px solid transparent;
+            cursor: pointer;
+            transition: transform .12s,box-shadow .14s,opacity .14s;
+            letter-spacing: .01em
+        }
+
+            button:active {
+                transform: scale(0.96)
+            }
+
+            button:disabled {
+                opacity: .44;
+                cursor: not-allowed
+            }
+
+        .btn-primary {
+            background: linear-gradient(135deg,#3aaeef 0%,#0d87d4 55%,#0558a0 100%);
+            color: #fff;
+            border-color: rgba(255,255,255,0.35);
+            box-shadow: 0 4px 18px rgba(13,135,212,0.38),inset 0 1px 0 rgba(255,255,255,0.25);
+        }
+
+            .btn-primary:hover {
+                box-shadow: 0 6px 24px rgba(13,135,212,0.52),inset 0 1px 0 rgba(255,255,255,0.30)
+            }
+
+        .btn-ghost {
+            background: rgba(255,255,255,0.55);
+            border-color: rgba(160,215,255,0.58);
+            color: var(--text2);
+            box-shadow: 0 3px 10px rgba(8,80,160,0.12)
+        }
+
+            .btn-ghost:hover {
+                background: rgba(255,255,255,0.82)
+            }
+
+        .btn-reload {
+            font-size: 12px;
+            padding: 6px 14px;
+            background: rgba(255,255,255,0.50);
+            border: 1.5px solid rgba(160,215,255,0.55);
+            color: var(--sky4);
+            box-shadow: 0 2px 8px rgba(8,80,160,0.10)
+        }
+
+            .btn-reload:hover {
+                background: rgba(255,255,255,0.80)
+            }
+
+        .btn-ed {
+            font-size: 11px;
+            padding: 5px 11px;
+            background: linear-gradient(135deg,rgba(255,225,90,0.52),rgba(255,175,35,0.38));
+            border-color: rgba(210,155,0,0.42);
+            color: #5a3400;
+            box-shadow: 0 2px 7px rgba(190,120,0,0.15)
+        }
+
+            .btn-ed:hover {
+                background: linear-gradient(135deg,rgba(255,225,90,0.78),rgba(255,175,35,0.60))
+            }
+
+        .btn-de {
+            font-size: 11px;
+            padding: 5px 11px;
+            background: linear-gradient(135deg,rgba(255,175,155,0.48),rgba(240,72,32,0.28));
+            border-color: rgba(210,70,35,0.38);
+            color: #7a1808;
+            box-shadow: 0 2px 7px rgba(190,55,20,0.13)
+        }
+
+            .btn-de:hover {
+                background: linear-gradient(135deg,rgba(255,175,155,0.72),rgba(240,72,32,0.52))
+            }
+
+        /* ── Feedback ── */
+        #feedback {
+            display: none;
+            padding: 11px 15px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            backdrop-filter: blur(8px)
+        }
+
+            #feedback.success {
+                display: block;
+                background: linear-gradient(135deg,rgba(60,185,90,0.18),rgba(25,145,70,0.12));
+                border: 1.5px solid rgba(25,145,70,0.42);
+                color: var(--leaf3)
+            }
+
+            #feedback.error {
+                display: block;
+                background: linear-gradient(135deg,rgba(240,72,32,0.15),rgba(195,35,15,0.10));
+                border: 1.5px solid rgba(215,72,35,0.42);
+                color: #800a00
+            }
+
+            #feedback.warning {
+                display: block;
+                background: linear-gradient(135deg,rgba(255,196,0,0.18),rgba(235,140,0,0.12));
+                border: 1.5px solid rgba(195,138,0,0.42);
+                color: #704800
+            }
+
+            #feedback pre {
+                margin-top: 7px;
+                font-size: 11px;
+                white-space: pre-wrap;
+                word-break: break-all;
+                opacity: .75;
+                font-family: monospace
+            }
+
+        /* ── Spinner ── */
+        .spinner {
+            display: none;
+            width: 15px;
+            height: 15px;
+            border: 2px solid rgba(255,255,255,0.38);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin .55s linear infinite;
+            vertical-align: middle;
+            margin-left: 5px
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        .spinner.active {
+            display: inline-block
+        }
+
+        /* ── Table ── */
+        .tbl-wrap {
+            overflow-x: auto
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            min-width: 560px
+        }
+
+        thead th {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .09em;
+            text-transform: uppercase;
+            color: var(--text2);
+            padding: 9px 13px;
+            background: rgba(190,228,255,0.32);
+            border-bottom: 1.5px solid rgba(160,215,255,0.55);
+            white-space: nowrap;
+            text-align: left;
+        }
+
+            thead th:first-child {
+                border-radius: 12px 0 0 0
+            }
+
+            thead th:last-child {
+                border-radius: 0 12px 0 0
+            }
+
+        tbody tr {
+            border-bottom: 1px solid rgba(160,215,255,0.28);
+            transition: background .12s
+        }
+
+            tbody tr:hover {
+                background: rgba(170,228,255,0.22)
+            }
+
+            tbody tr:last-child {
+                border-bottom: none
+            }
+
+        tbody td {
+            padding: 10px 13px;
+            vertical-align: middle
+        }
+
+        td.mono {
+            font-family: monospace;
+            font-size: 12px;
+            color: var(--text3);
+            font-weight: 700
+        }
+
+        td.sci {
+            font-style: italic;
+            font-weight: 700;
+            color: var(--sky5)
+        }
+
+        .sbadge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 3px 10px;
+            border-radius: 20px;
+            border: 1px solid transparent;
+            letter-spacing: .06em
+        }
+
+        .sLC {
+            background: #d4f5dc;
+            color: #1a5a28;
+            border-color: #8edc9f
+        }
+
+        .sNT {
+            background: #e2f7d5;
+            color: #285510;
+            border-color: #a5de78
+        }
+
+        .sVU {
+            background: #fff5c2;
+            color: #5a3800;
+            border-color: #ffe566
+        }
+
+        .sEN {
+            background: #ffe0d6;
+            color: #782010;
+            border-color: #ff9a7a
+        }
+
+        .sCR {
+            background: #ffd5d5;
+            color: #780808;
+            border-color: #ff8080
+        }
+
+        .sEX {
+            background: #e8e8e8;
+            color: #383838;
+            border-color: #b0b0b0
+        }
+
+        .sEW {
+            background: #ece8f5;
+            color: #38256a;
+            border-color: #b8a8e0
+        }
+
+        .sDD {
+            background: #deeeff;
+            color: #183870;
+            border-color: #88b8f0
+        }
+
+        .sNE {
+            background: #e6f4ff;
+            color: #183e5a;
+            border-color: #9acbf0
+        }
+
+        .sSTABLE {
+            background: #d5f0ff;
+            color: #082e5a;
+            border-color: #7ecef5
+        }
+
+        .snone {
+            color: var(--text3);
+            font-style: italic
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--text3);
+            padding: 3.5rem 1rem;
+            font-style: italic;
+            font-weight: 600
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo" aria-hidden="true">🐦</div>
+        <h1>Bird<span>Taxonomy</span></h1>
+        <div class="hpill">CRUD · Taxones</div>
+    </header>
+
+    <main>
+        <!-- Formulario -->
+        <aside>
+            <div class="glass panel">
+                <div class="panel-head">
+                    <div class="panel-head-title">
+                        <span id="form-title">Nuevo taxón</span>
+                        <span class="pill pill-c" id="form-badge">Crear</span>
+                    </div>
+                </div>
+
+                <div id="feedback" role="alert"></div>
+
+                <form id="taxon-form" novalidate autocomplete="off">
+                    <input type="hidden" id="taxon-id" />
+
+                    <div class="field">
+                        <label for="nombre-cientifico">Nombre científico<span class="req">*</span></label>
+                        <input type="text" id="nombre-cientifico" maxlength="150" placeholder="Ej. Falco peregrinus" required />
+                        <div class="field-error" id="err-nombre">Obligatorio · máx. 150 caracteres.</div>
+                    </div>
+
+                    <div class="field">
+                        <label for="rango-id">Rango taxonómico<span class="req">*</span></label>
+                        <select id="rango-id" required>
+                            <option value="">— cargando rangos… —</option>
+                        </select>
+                        <div class="field-error" id="err-rango">Selecciona un rango.</div>
+                    </div>
+
+                    <div class="sp-toggle" id="toggle-species" role="button" aria-expanded="false" tabindex="0">
+                        <span class="sp-arrow" id="toggle-icon">▶</span>
+                        <span class="sp-lbl">Información de especie — opcional</span>
+                    </div>
+
+                    <div class="sp-section" id="species-section">
+                        <div class="sp-inner">
+                            <div class="field">
+                                <label for="nombre-comun">Nombre común<span class="req">*</span></label>
+                                <input type="text" id="nombre-comun" maxlength="100" placeholder="Ej. Halcón peregrino" />
+                                <div class="field-error" id="err-nombre-comun">Obligatorio cuando se incluye información de especie.</div>
+                            </div>
+                            <div class="field">
+                                <label for="descripcion">Descripción</label>
+                                <textarea id="descripcion" maxlength="200" rows="3" placeholder="Descripción breve…"></textarea>
+                                <div class="hint">Máx. 200 caracteres.</div>
+                            </div>
+                            <div class="check-row">
+                                <input type="checkbox" id="domesticada" />
+                                <label for="domesticada">Especie domesticada</label>
+                            </div>
+                            <div class="field">
+                                <label for="estado-conservacion">Estado de conservación</label>
+                                <input type="text" id="estado-conservacion" list="estados-list" placeholder="LC, NT, VU… o escribe alias" />
+                                <datalist id="estados-list">
+                                    <option value="LC">LC — Preocupación menor</option>
+                                    <option value="NT">NT — Casi amenazada</option>
+                                    <option value="VU">VU — Vulnerable</option>
+                                    <option value="EN">EN — En peligro</option>
+                                    <option value="CR">CR — En peligro crítico</option>
+                                    <option value="EX">EX — Extinta</option>
+                                    <option value="EW">EW — Extinta en estado silvestre</option>
+                                    <option value="DD">DD — Datos insuficientes</option>
+                                    <option value="NE">NE — No evaluada</option>
+                                    <option value="STABLE">STABLE — Estable</option>
+                                </datalist>
+                                <div class="hint">Alias: "estable", "vulnerable", "endangered"…</div>
+                                <div class="field-error" id="err-estado">Valor no reconocido. Permitidos: LC NT VU EN CR EX EW DD NE STABLE.</div>
+                            </div>
+                            <div class="field" style="margin-bottom:0">
+                                <label for="ubicacion">Ubicación geográfica</label>
+                                <input type="text" id="ubicacion" maxlength="150" placeholder="Ej. América del Sur, Patagonia" />
+                                <div class="hint">Máx. 150 caracteres.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="btn-row">
+                        <button type="submit" class="btn-primary" id="btn-guardar">
+                            <span id="btn-text">Guardar</span>
+                            <span class="spinner" id="spinner" aria-hidden="true"></span>
+                        </button>
+                        <button type="button" class="btn-ghost" id="btn-limpiar">Limpiar</button>
+                    </div>
+                </form>
+            </div>
+        </aside>
+
+        <!-- Tabla -->
+        <section>
+            <div class="glass panel">
+                <div class="panel-head">
+                    <div class="panel-head-title">Taxones registrados</div>
+                    <button class="btn-reload" id="btn-reload">↻ Actualizar</button>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nombre científico</th>
+                                <th>Rango</th>
+                                <th>Nombre común</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="taxones-tbody">
+                            <tr><td colspan="6" class="empty-state">Cargando taxones…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>/* ══ CONFIG — ajusta si el backend corre en otro host ══ */
+const API_URL = '/api/taxonomia';
+
+/* ══ NORMALIZACIÓN ESTADO DE CONSERVACIÓN ══ */
+const ALIAS = {
+  'lc':'LC','preocupacion menor':'LC','preocupación menor':'LC','least concern':'LC',
+  'nt':'NT','casi amenazada':'NT','near threatened':'NT',
+  'vu':'VU','vulnerable':'VU',
+  'en':'EN','en peligro':'EN','endangered':'EN',
+  'cr':'CR','en peligro critico':'CR','en peligro crítico':'CR','critically endangered':'CR',
+  'ex':'EX','extinta':'EX','extinct':'EX',
+  'ew':'EW','extinta en estado silvestre':'EW','extinct in the wild':'EW',
+  'dd':'DD','datos insuficientes':'DD','data deficient':'DD',
+  'ne':'NE','no evaluada':'NE','not evaluated':'NE',
+  'stable':'STABLE','estable':'STABLE',
+};
+function normEstado(v){ return v?.trim() ? ALIAS[v.trim().toLowerCase()]??null : null; }
+
+/* ══ DOM ══ */
+const $=id=>document.getElementById(id);
+const form=$('taxon-form'),taxonId=$('taxon-id'),nombre=$('nombre-cientifico'),
+  rangoSel=$('rango-id'),nomComun=$('nombre-comun'),descripcion=$('descripcion'),
+  domesticada=$('domesticada'),estado=$('estado-conservacion'),ubicacion=$('ubicacion'),
+  spSec=$('species-section'),spArrow=$('toggle-icon'),spBtn=$('toggle-species'),
+  feedback=$('feedback'),spinner=$('spinner'),btnG=$('btn-guardar'),btnT=$('btn-text'),
+  tbody=$('taxones-tbody'),fBadge=$('form-badge'),fTitle=$('form-title');
+
+let spOpen=false;
+function toggleSp(f){spOpen=f!==undefined?f:!spOpen;spSec.classList.toggle('open',spOpen);spArrow.classList.toggle('open',spOpen);spBtn.setAttribute('aria-expanded',String(spOpen))}
+spBtn.addEventListener('click',()=>toggleSp());
+spBtn.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleSp()}});
+
+function showFB(msg,type='success',detail=null){
+  feedback.className=type;
+  feedback.innerHTML=msg+(detail?`<pre>${JSON.stringify(detail,null,2)}</pre>`:'');
+  feedback.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function hideFB(){feedback.className='';feedback.innerHTML=''}
+function setLoad(on){spinner.classList.toggle('active',on);btnG.disabled=on;btnT.textContent=on?'Guardando…':'Guardar'}
+
+function showErr(id,show){const el=$(id);const inp=el?.previousElementSibling;el?.classList.toggle('show',show);if(inp&&['INPUT','SELECT','TEXTAREA'].includes(inp.tagName))inp.classList.toggle('error',show)}
+function clearErr(){['err-nombre','err-rango','err-nombre-comun','err-estado'].forEach(id=>showErr(id,false))}
+function validar(){
+  clearErr();let ok=true;
+  if(!nombre.value.trim()||nombre.value.length>150){showErr('err-nombre',true);ok=false}
+  if(!rangoSel.value){showErr('err-rango',true);ok=false}
+  if(spOpen){
+    if(!nomComun.value.trim()||nomComun.value.length>100){showErr('err-nombre-comun',true);ok=false}
+    const r=estado.value.trim();if(r&&!normEstado(r)){showErr('err-estado',true);ok=false}
+  }
+  return ok;
+}
+
+		function buildPayload() {
+			const p = { nombre: nombre.value.trim(), rankId: parseInt(rangoSel.value, 10) };
+			if (spOpen) {
+				const r = estado.value.trim();
+				p.speciesInfo = {
+					nombreComun: nomComun.value.trim(), descripcion: descripcion.value.trim() || null,
+					domesticada: domesticada.checked, estadoConservacion: r ? normEstado(r) : null,
+					ubicacionGeografica: ubicacion.value.trim() || null
+				};
+			} else { p.speciesInfo = null }
+			return p;
+		}
+
+async function apiFetch(url,opts={}){
+  const full=url.startsWith('http')?url:API_URL+url;
+  const cfg={headers:{'Content-Type':'application/json'},...opts};
+  console.group(`%c[BirdTaxonomy] ${cfg.method||'GET'} ${full}`,'color:#0d87d4;font-weight:700');
+  if(cfg.body)console.log('▶ Request:',JSON.parse(cfg.body));
+  const res=await fetch(full,cfg);let data=null;
+  try{data=await res.json()}catch{}
+  console.log('◀ Status:',res.status,'| Response:',data);console.groupEnd();
+  return{ok:res.ok,status:res.status,data};
+}
+
+async function cargarRangos(){
+  try{const{ok,data}=await apiFetch('/rangos');if(!ok)throw 0;
+    rangoSel.innerHTML='<option value="">— selecciona un rango —</option>';
+	  (data || []).forEach(r => {
+		  const o = document.createElement('option'); o.value = r.rangoId;
+		  o.textContent = r.nombreRango; rangoSel.appendChild(o)
+	  });
+  }catch{rangoSel.innerHTML='<option value="">Error cargando rangos</option>'}}
+
+async function cargarTaxones(){
+  tbody.innerHTML='<tr><td colspan="6" class="empty-state">Cargando…</td></tr>';
+  try{const{ok,data}=await apiFetch('/taxones');if(!ok)throw 0;renderTabla(data||[])}
+  catch{tbody.innerHTML='<tr><td colspan="6" class="empty-state" style="color:#c03010">Error al cargar. Revisa la consola.</td></tr>'}}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+function renderTabla(list){
+  if(!list.length){tbody.innerHTML='<tr><td colspan="6" class="empty-state">No hay taxones registrados.</td></tr>';return}
+  tbody.innerHTML=list.map(t=>{
+    const si=t.speciesInfo,ev=si?.estadoConservacion||'';
+    const badge=ev?`<span class="sbadge s${ev}">${ev}</span>`:`<span class="snone">—</span>`;
+    return`<tr>
+      <td class="mono">${t.taxonId}</td>
+      <td class="sci">${esc(t.nombreCientifico)}</td>
+      <td>${esc(t.nombreRango||'')}</td>
+      <td>${si?.nombreComun?esc(si.nombreComun):'<span class="snone">—</span>'}</td>
+      <td>${badge}</td>
+      <td><div style="display:flex;gap:6px">
+        <button class="btn-ed" onclick="editarTaxon(${t.taxonId})">✏ Editar</button>
+        <button class="btn-de" onclick="eliminarTaxon(${t.taxonId},'${esc(t.nombreCientifico)}')">✕ Eliminar</button>
+      </div></td>
+    </tr>`;
+  }).join('')}
+
+async function editarTaxon(id){
+  hideFB();const{ok,data}=await apiFetch(`/taxones/${id}`);
+  if(!ok){showFB('No se pudo cargar el taxón.','error',data);return}
+  taxonId.value=data.taxonId;nombre.value=data.nombreCientifico||'';rangoSel.value=data.rangoId||'';
+  const si=data.speciesInfo;
+  if(si){toggleSp(true);nomComun.value=si.nombreComun||'';descripcion.value=si.descripcion||'';
+    domesticada.checked=!!si.domesticada;estado.value=si.estadoConservacion||'';ubicacion.value=si.ubicacionGeografica||'';
+  }else{toggleSp(false);nomComun.value='';descripcion.value='';domesticada.checked=false;estado.value='';ubicacion.value=''}
+  fTitle.textContent=`Editando #${data.taxonId}`;fBadge.textContent='Editar';fBadge.className='pill pill-e';
+  window.scrollTo({top:0,behavior:'smooth'});nombre.focus();
+}
+
+async function eliminarTaxon(id,nc){
+  if(!confirm(`¿Eliminar "${nc}" (ID: ${id})?\nEsta acción no se puede deshacer.`))return;
+  const{ok,status,data}=await apiFetch(`/taxones/${id}`,{method:'DELETE'});
+  if(ok||status===204){showFB(`Taxón #${id} eliminado.`,'success');cargarTaxones()}
+  else if(status===409){showFB('Conflicto (409): el registro puede tener dependencias.','warning',data)}
+  else{showFB(`Error ${status} al eliminar.`,'error',data)}
+}
+
+function limpiarForm(){
+  taxonId.value='';nombre.value='';rangoSel.value='';
+  nomComun.value='';descripcion.value='';domesticada.checked=false;estado.value='';ubicacion.value='';
+  toggleSp(false);clearErr();hideFB();
+  fTitle.textContent='Nuevo taxón';fBadge.textContent='Crear';fBadge.className='pill pill-c';
+}
+$('btn-limpiar').addEventListener('click',limpiarForm);
+$('btn-reload').addEventListener('click',cargarTaxones);
+
+form.addEventListener('submit',async e=>{
+  e.preventDefault();hideFB();
+  if(!validar()){showFB('Corrige los errores marcados antes de continuar.','error');return}
+  const id=taxonId.value,payload=buildPayload();setLoad(true);
+  try{
+    const res=id
+      ?await apiFetch(`/taxones/${id}`,{method:'PUT', body:JSON.stringify(payload)})
+      :await apiFetch('/taxones',       {method:'POST',body:JSON.stringify(payload)});
+    if(res.ok||res.status===201||res.status===204){
+      showFB(id?'✓ Taxón actualizado correctamente.':'✓ Taxón creado correctamente.','success',res.data);
+      limpiarForm();cargarTaxones();
+    }else if(res.status===400){showFB('Errores de validación del servidor (400):','error',res.data)}
+    else if(res.status===409){showFB('Conflicto (409): ya existe un taxón con ese nombre.','warning',res.data)}
+    else if(res.status>=500){showFB(`Error del servidor (${res.status}): problema con la base de datos.`,'error',res.data)}
+    else{showFB(`Respuesta inesperada (${res.status}).`,'error',res.data)}
+  }catch(err){showFB('Error de red. ¿Está corriendo el servidor? Revisa la consola.','error');console.error(err)}
+  finally{setLoad(false)}
+});
+
+(async()=>{await cargarRangos();await cargarTaxones()})();</script>
+</body>
+</html>

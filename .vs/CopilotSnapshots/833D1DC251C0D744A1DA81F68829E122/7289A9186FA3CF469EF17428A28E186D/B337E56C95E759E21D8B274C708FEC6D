@@ -1,0 +1,104 @@
+﻿# Contexto Amplio y Específico: Irregularidades y Resistencias de la Solución
+
+## Resumen Ejecutivo
+
+La solución BirdTaxonomy.API tiene **desalineación crítica entre el esquema físico de la BD (legacy)** y el **mapeo ORM/API**, causando errores 400, 409, 500 en operaciones de escritura. El servicio TaxonomiaConsultaService contiene validaciones estrictas que no corresponden con los datos reales de la BD ni con las expectativas del cliente.
+
+---
+
+[...el resto del documento anterior permanece sin cambios...]
+
+---
+
+## NUEVA SECCIÓN: Inspección de logs EF Core (ejecución real de consultas)
+
+Se han capturado los logs de EF Core durante una operación de creación de taxón. A continuación se presenta el extracto de logs y el análisis específico.
+
+### Extracto de logs relevantes (resumido)
+
+- Se ejecutó SELECT sobre `rank`:
+  ```sql
+  SELECT TOP(1) [r].[ID], [r].[name_]
+  FROM [rank] AS [r]
+  WHERE [r].[ID] = @__p_0
+  ```
+  - Tiempo: ~2677 ms (ejecución completa en un caso)
+
+- Se ejecutó EXISTS sobre `taxon` para verificar duplicados:
+  ```sql
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM [taxon] AS [t]
+      WHERE [t].[name_] = @__nombre_0 AND [t].[rankid] = @__rankId_1)
+    THEN CAST(1 AS bit)
+    ELSE CAST(0 AS bit)
+  END
+  ```
+  - Tiempo: ~2076 ms
+  - Observación: EF genera consultas usando la columna `name_` en `taxon`.
+
+- Se ejecutó SELECT MAX(ID) sobre `taxon` para obtener el siguiente Id:
+  ```sql
+  SELECT MAX([t].[ID]) FROM [taxon] AS [t]
+  ```
+  - Tiempo: ~1144 ms
+
+- Operación de inserción (SaveChanges) envió un batch con dos comandos:
+  ```sql
+  SET NOCOUNT ON;
+  INSERT INTO [taxon] ([ID], [name_], [rankid]) VALUES (@p0, @p1, @p2);
+  INSERT INTO [species_info] ([taxonid], [commun_name], [conservation_status], [description_], [domesticated], [geographic_location])
+  VALUES (@p3, @p4, @p5, @p6, @p7, @p8);
+  ```
+  - Tiempo total del batch: ~1843 ms
+  - Observación: EF está escribiendo en columnas con nombres concretos: `name_`, `commun_name`, `description_`, `conservation_status`, `geographic_location`.
+
+- Transacción: EF abrió una transacción, ejecutó el batch y la confirmó.
+
+### Hallazgos directos a partir de los logs
+
+1. Mapeo real detectado por EF (columnas físicas utilizadas):
+   - rank: `ID`, `name_` (nota: `name_` con guion bajo)
+   - taxon: `ID`, `name_`, `rankid`
+   - species_info: `taxonid`, `commun_name` (nota: `commun` con doble 'm'), `conservation_status`, `description_` (suffix underscore), `domesticated`, `geographic_location`
+
+   Observación: estos nombres difieren ligeramente de los nombres previstos en la documentación analizada antes (por ejemplo `common_name` vs `commun_name`, `description` vs `description_`, `name` vs `name_`). Esto indica que existe alguna configuración en el proyecto que mapea propiedades C# a estas columnas físicas (o que el esquema físico fue creado con esos nombres). Hay que alinear la documentación con los nombres reales detectados.
+
+2. El ORM realiza las comprobaciones de duplicado y cálculo de siguiente Id en la BD (SELECT MAX(ID)). El esquema **no usa identidad** para `taxon.ID` y el código obtiene el siguiente Id manualmente.
+
+3. Los tiempos observados para algunas consultas son relativamente altos (sobre 1-2.6 segundos). Podría ser por carga en la BD LocalDB, índices inexistentes, o latencia de disco en OneDrive (si los archivos MDF/LDF están en OneDrive). Recomendación: revisar ubicación física de los MDF/LDF y la presencia de índices adecuados.
+
+4. EF ejecuta los INSERTs en una transacción y retorna éxito; por tanto la inserción fue realizada correctamente en estos casos.
+
+5. Los parámetros mostrados por EF usan DbType AnsiString (varchar) y tamaños (p.ej. Size = 150), lo que confirma que EF está dispuesto a escribir en columnas `varchar` (no `nvarchar`). Esto coincide con el esquema legacy observado (varchar).
+
+6. Mensajes de ChangeTracking sugieren habilitar SensitiveDataLogging si necesitas ver valores de claves en logs para depuración segura en desarrollo.
+
+### Implicaciones para el proyecto (concrete)
+
+- Ajustar la documentación y los archivos .md para reflejar los nombres reales de las columnas: `name_`, `description_`, `commun_name`, etc. Esto evita confusión cuando se inspecciona la BD desde SSMS.
+
+- Verificar las configuraciones EF existentes: aunque en un primer análisis no se hallaron configuraciones explícitas, los logs muestran que EF ya mapea propiedades a columnas con nombres específicos. Localiza las clases de configuración (IEntityTypeConfiguration) y confirma que usan HasColumnName para estos identificadores. Si dichas configuraciones no existen, investiga dónde se definió el mapeo (posible Data Annotations o convenciones personalizadas).
+
+- Latencia: Investigar por qué los SELECT/EXISTS/MAX tardan 1-2+ segundos. Posibles causas:
+  - LocalDB en unidad de OneDrive (sincronización) → muy lento. Mover MDF/LDF a una ruta local no sincronizada.
+  - Falta de índices en columnas usadas en WHERE (p.ej. `taxon.name_`, `taxon.rankid`) → Añadir índices si necesario.
+  - Antivirus o bloqueo por OneDrive.
+
+- Seguridad/Logging: activar EnableSensitiveDataLogging en desarrollo para ver parámetros en logs (no en producción). Incrementar nivel de logging a Debug en dev.
+
+- Validaciones: ya que EF escribe en `conservation_status`, asegúrate de que la lista de valores permitidos coincida con los valores reales o bien hacer la validación case-insensitive y tolerantemente (mapear "Estable"→"Stable" si aplica).
+
+### Acciones sugeridas a corto plazo (prioridad alta)
+
+1. Actualizar los archivos de contexto/documentación para reflejar los nombres reales detectados.
+2. Revisar la ubicación física del archivo de la BD (OneDrive vs disco local) y mover a ruta local si está en OneDrive.
+3. Revisar índices en `taxon` (index sobre `name_`, `rankid`) para acelerar EXISTS y búsquedas.
+4. Habilitar logging sensible en desarrollo y subir el nivel a Debug temporalmente.
+5. Hacer la validación de `EstadoConservacion` case-insensitive y documentar los valores permitidos.
+6. Confirmar que la relación PK=FK para `species_info.taxonid` está configurada en EF (HasKey + HasForeignKey).
+
+---
+
+Agregue esta sección al contexto principal para que Codex/ChatGPT y otros desarrolladores vean el resultado real de ejecución y ajusten la armonización entre BD y ORM.
+

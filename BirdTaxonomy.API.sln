@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36221.1 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BirdTaxonomy.API", "BirdTaxonomy.API.csproj", "{B260945E-8BE0-414E-871A-4F38B1B86422}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B260945E-8BE0-414E-871A-4F38B1B86422}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B260945E-8BE0-414E-871A-4F38B1B86422}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B260945E-8BE0-414E-871A-4F38B1B86422}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B260945E-8BE0-414E-871A-4F38B1B86422}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {5AD1AE87-F986-48C2-ACD4-D203F0749FD9}
+	EndGlobalSection
+EndGlobal

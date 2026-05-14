@@ -1,0 +1,529 @@
+﻿# Contexto Amplio y Específico: Irregularidades y Resistencias de la Solución
+
+## Resumen Ejecutivo
+
+La solución BirdTaxonomy.API tiene **desalineación crítica entre el esquema físico de la BD (legacy)** y el **mapeo ORM/API**, causando errores 400, 409, 500 en operaciones de escritura. El servicio TaxonomiaConsultaService contiene validaciones strict que no corresponden con los datos reales de la BD ni con las expectativas del cliente.
+
+---
+
+## 1. IRREGULARIDADES DETECTADAS EN LA BD vs ORM
+
+### 1.1 Nomenclatura de Columnas: snake_case vs PascalCase
+
+**Esquema físico (SQL Server - dbo.species_info):**
+```
+- taxonid (PK, FK, int, NOT NULL)
+- common_name (varchar(100), NOT NULL)
+- description (varchar(200), NULL)
+- domesticated (bit, NOT NULL)
+- conservation_status (varchar(50), NULL)
+- geographic_location (varchar(150), NULL)
+```
+
+**Mapeo ORM (Entidad SpeciesInfo - C#):**
+```csharp
+public sealed class SpeciesInfo
+{
+    public int TaxonId { get; set; }           // ✓ PascalCase
+    public string CommonName { get; set; }     // ✗ Debe ser "common_name"
+    public string? Description { get; set; }    // ✗ Debe ser "description"
+    public bool Domesticated { get; set; }     // ✗ Debe ser "domesticated"
+    public string? ConservationStatus { get; set; }  // ✗ Debe ser "conservation_status"
+    public string? GeographicLocation { get; set; } // ✗ Debe ser "geographic_location"
+    public Taxon? Taxon { get; set; }
+}
+```
+
+**Problema:** EF Core no mapea automáticamente PascalCase→snake_case sin configuración explícita.
+
+**Solución requerida:** Las configuraciones (SpeciesInfoConfiguration, TaxonConfiguration) **deben incluir**:
+```csharp
+builder.Property(s => s.CommonName).HasColumnName("common_name");
+builder.Property(s => s.Description).HasColumnName("description");
+// ... etc para todas las columnas snake_case
+```
+
+---
+
+### 1.2 Relación One-to-One: TaxonId como PK y FK (Schema Legacy)
+
+**Esquema BD:**
+- Tabla `dbo.species_info`:
+  - `taxonid` = PK (Primary Key) + FK (Foreign Key → taxon.ID)
+  - Una fila de species_info está 1:1 atada a un taxón
+
+**Mapeo ORM actual:**
+```csharp
+public sealed class SpeciesInfo
+{
+    public int TaxonId { get; set; }    // ✓ Se reconoce como FK
+    public Taxon? Taxon { get; set; }
+}
+```
+
+**Problema:** EF Core no detecta automáticamente que `TaxonId` es también PK si no se configura explícitamente.
+
+**Solución requerida en SpeciesInfoConfiguration:**
+```csharp
+builder.HasKey(s => s.TaxonId);  // TaxonId es PK
+builder.HasOne(s => s.Taxon)
+    .WithOne(t => t.SpeciesInfo)
+    .HasForeignKey<SpeciesInfo>(s => s.TaxonId)
+    .OnDelete(DeleteBehavior.Cascade);
+```
+
+---
+
+### 1.3 Nullabilidad Inconsistente: taxon.name
+
+**Esquema BD:**
+```
+dbo.taxon.name: varchar(150), NULL
+```
+
+**Validación ORM:**
+```csharp
+private static string ValidarNombre(string nombre)
+{
+    var limpio = nombre.Trim();
+    if (string.IsNullOrWhiteSpace(limpio))
+        throw new ArgumentException("El nombre es obligatorio.");
+    // ...
+    return limpio;
+}
+```
+
+**Problema:** La BD permite NULL, pero la API rechaza nombres vacíos. Inconsistencia de contrato.
+
+**Impacto:** Si alguien hace UPDATE directo en SQL insertando NULL, la API no puede leerlo sin fallar o convertirlo silenciosamente.
+
+---
+
+### 1.4 Tipos de Datos: varchar vs nvarchar (Encoding)
+
+**Esquema BD:** Todas las columnas de texto son `varchar(n)` — tipo no-Unicode, colación probable: SQL_Latin1_General_CP1_CI_AS.
+
+**EF Core Default:** Mapea `string` a `nvarchar(max)` — tipo Unicode, potencial desajuste de encoding.
+
+**Problema:** Caracteres especiales (acentos, caracteres latinos extendidos) pueden diferir en representación.
+
+**Impacto:** Si insertas "Aves" con acento desde la API (nvarchar), puede comparar distinto en búsquedas con datos existentes (varchar legacy).
+
+---
+
+## 2. IRREGULARIDADES EN VALIDACIONES (TaxonomiaConsultaService)
+
+### 2.1 EstadosConservacionPermitidos: Lista Hardcoded y Case-Sensitive
+
+**Código actual:**
+```csharp
+private static readonly HashSet<string> EstadosConservacionPermitidos =
+[
+    "LC", "NT", "VU", "EN", "CR", "EX", "EW", "DD", "NE", "Stable"
+];
+
+// En ValidarCamposOpcionales:
+if (!EstadosConservacionPermitidos.Contains(estado))
+    throw new ArgumentException("El estado de conservacion no es valido.");
+```
+
+**Problema 1: Case-Sensitive**
+- `HashSet.Contains()` es case-sensitive por defecto.
+- Cliente envía: `"stable"` (minúscula) → validación falla.
+- Cliente envía: `"LC"` (mayúscula) → válido.
+
+**Problema 2: Hardcoded vs BD**
+- ¿De dónde vienen los valores permitidos? ¿De una tabla lookup o política fija?
+- Si la BD tiene una tabla `conservation_status_enum` o similar, esta lista puede desincronizarse.
+- No existe una referencia clara a dónde se originan estos valores.
+
+**Problema 3: Localización**
+- "Stable" es inglés, pero el resto está en código IUCN (LC, NT, VU, etc.).
+- Inconsistencia semántica: ¿es "Stable" un sinónimo de "LC" o estado propio?
+
+**Resistencia capturada:** Error 400 cuando cliente envía estado que no está en la lista (ejemplo: "Estable" en lugar de "Stable").
+
+---
+
+### 2.2 Longitud máxima de campos: Validación vs BD
+
+**Validación en servicio:**
+```csharp
+if (nombreComun.Trim().Length > 100)
+    throw new ArgumentException("El nombre comun no puede superar 100 caracteres.");
+
+if (descripcion.Trim().Length > 200)
+    throw new ArgumentException("La descripcion no puede superar 200 caracteres.");
+
+if (ubicacionGeografica.Trim().Length > 150)
+    throw new ArgumentException("La ubicacion geografica no puede superar 150 caracteres.");
+```
+
+**Esquema BD (desde imagen):**
+```
+- common_name: varchar(100), NOT NULL ✓ Coincide
+- description: varchar(200), NULL   ✓ Coincide
+- geographic_location: varchar(150), NULL ✓ Coincide
+```
+
+**Estado:** Validaciones coinciden. ✓ OK en este aspecto.
+
+---
+
+## 3. RESISTENCIAS DE COMUNICACIÓN CAPTURADAS
+
+### 3.1 Error 400 Bad Request
+
+**Causas potenciales:**
+
+1. **Binding JSON → DTO fallido**
+   - Campo JSON con nombre incorrecto (ej. `nombreComun` vs `nombre_comun`).
+   - Ejemplo request que falla:
+     ```json
+     {
+       "nombre": "Aves",
+       "rankId": 1,
+       "especiesInfo": {
+         "nombre_comun": "Aves",  // ✗ Debería ser "nombreComun"
+         "descripcion": "..."
+       }
+     }
+     ```
+   - Respuesta: 400 Bad Request (binding error de ASP.NET Core).
+
+2. **Validación de entrada fallida**
+   - Nombre vacío o whitespace: ValidarNombre lanza ArgumentException.
+   - Campo obligatorio nulo en DTO (NombreComun).
+   - Respuesta: 400 Bad Request + mensaje "El nombre comun es obligatorio."
+
+**Logs esperados (si Debug):**
+```
+System.Text.Json.JsonException: The JSON value could not be converted...
+```
+
+---
+
+### 3.2 Error 409 Conflict
+
+**Causas potenciales:**
+
+1. **Duplicado detectado (nombre + rankId único)**
+   ```csharp
+   var duplicado = await _unitOfWork.Taxones.ExistsByNameAndRankAsync(nombre, request.RankId);
+   if (duplicado)
+       throw new InvalidOperationException("Ya existe un taxon con el mismo nombre para ese rango.");
+   ```
+   - Respuesta: 409 Conflict (InvalidOperationException mapeada a 409).
+   - Ejemplo: Intentar crear "Aves" con RankId=1 cuando ya existe.
+
+2. **Constraint único en BD violado (fallback)**
+   - Si no se detecta en la API pero sí en la BD: DbUpdateException.
+   - Respuesta: 500 Internal Server Error (si no está manejada la excepción).
+
+**Resistencia capturada:** 409 cuando cliente intenta crear taxón duplicado.
+
+---
+
+### 3.3 Error 400 Bad Request: EstadoConservacion Inválido
+
+**Causa específica:**
+```
+message: "El estado de conservacion no es valido. (Parameter 'estadoConservacion')"
+```
+
+**Escenario reproducible:**
+1. Cliente envía:
+   ```json
+   {
+     "nombre": "Aves",
+     "rankId": 1,
+     "especiesInfo": {
+       "nombreComun": "Aves",
+       "descripcion": "Clase de vertebrados",
+       "domesticated": false,
+       "estadoConservacion": "Estable",  // ✗ Debería ser "Stable" o un código IUCN
+       "ubicacionGeografica": "Global"
+     }
+   }
+   ```
+
+2. ValidarCamposOpcionales valida:
+   ```csharp
+   if (!EstadosConservacionPermitidos.Contains("Estable"))
+       throw new ArgumentException("El estado de conservacion no es valido.");
+   ```
+
+3. Respuesta: 400 Bad Request con mensaje de error.
+
+**Raíz:** Cliente usa convención española ("Estable") pero la API espera códigos IUCN en inglés ("LC", "Stable", etc.).
+
+---
+
+### 3.4 Error 500 Internal Server Error
+
+**Causas potenciales:**
+
+1. **Conexión a BD fallida**
+   - appsettings.json con ConnectionString incorrecta.
+   - Servidor LocalDB no disponible o sin permisos.
+   - Respuesta: 500 "Resistencia de comunicacion con la base de datos" (ProblemDetails).
+
+2. **DbUpdateException no maneada**
+   - Constraint violado que no fue detectado en la API.
+   - FK inválida (rankId que no existe).
+   - Columna NOT NULL sin valor.
+   - Respuesta: 500 + exception details (si DeveloperExceptionPage está habilitada).
+
+3. **Mapeo ORM fallido (columnas snake_case no mapeadas)**
+   - Si SpeciesInfoConfiguration no tiene HasColumnName() para cada propiedad:
+     ```
+     System.Data.SqlClient.SqlException: Invalid column name 'CommonName'...
+     ```
+   - EF Core intenta leer/escribir "CommonName" pero la BD tiene "common_name".
+   - Respuesta: 500 + exception.
+
+---
+
+## 4. FALTA DE CONFIGURACIONES EF CORE EXPLÍCITAS
+
+### 4.1 ¿Existen TaxonConfiguration y SpeciesInfoConfiguration?
+
+**Estado actual:** No se ven las configuraciones en el análisis. Si existen, deben contener:
+
+**TaxonConfiguration (requerida):**
+```csharp
+public sealed class TaxonConfiguration : IEntityTypeConfiguration<Taxon>
+{
+    public void Configure(EntityTypeBuilder<Taxon> builder)
+    {
+        builder.ToTable("taxon");  // Nombre exacto de tabla
+        builder.HasKey(t => t.Id);
+
+        builder.Property(t => t.Id).HasColumnName("ID");
+        builder.Property(t => t.Name).HasColumnName("name").HasMaxLength(150);
+        builder.Property(t => t.RankId).HasColumnName("rankid");
+
+        builder.HasOne(t => t.Rank)
+            .WithMany(r => r.Taxones)
+            .HasForeignKey(t => t.RankId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(t => t.SpeciesInfo)
+            .WithOne(s => s.Taxon)
+            .HasForeignKey<SpeciesInfo>(s => s.TaxonId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+```
+
+**SpeciesInfoConfiguration (requerida):**
+```csharp
+public sealed class SpeciesInfoConfiguration : IEntityTypeConfiguration<SpeciesInfo>
+{
+    public void Configure(EntityTypeBuilder<SpeciesInfo> builder)
+    {
+        builder.ToTable("species_info");
+        builder.HasKey(s => s.TaxonId);
+
+        builder.Property(s => s.TaxonId).HasColumnName("taxonid");
+        builder.Property(s => s.CommonName).HasColumnName("common_name").HasMaxLength(100).IsRequired();
+        builder.Property(s => s.Description).HasColumnName("description").HasMaxLength(200);
+        builder.Property(s => s.Domesticated).HasColumnName("domesticated");
+        builder.Property(s => s.ConservationStatus).HasColumnName("conservation_status").HasMaxLength(50);
+        builder.Property(s => s.GeographicLocation).HasColumnName("geographic_location").HasMaxLength(150);
+    }
+}
+```
+
+**RankConfiguration (requerida):**
+```csharp
+public sealed class RankConfiguration : IEntityTypeConfiguration<Rank>
+{
+    public void Configure(EntityTypeBuilder<Rank> builder)
+    {
+        builder.ToTable("rank");
+        builder.HasKey(r => r.Id);
+
+        builder.Property(r => r.Id).HasColumnName("ID");
+        builder.Property(r => r.Name).HasColumnName("name").HasMaxLength(50);
+    }
+}
+```
+
+**Si faltan:** Error 500 al hacer queries (columnas no encontradas).
+
+---
+
+## 5. FALTA DE ENDPOINTS EN CONTROLLER
+
+### 5.1 ¿Están expuestos los endpoints POST/PUT/DELETE?
+
+**Métodos en servicio (ITaxonomiaConsultaService):**
+```csharp
+Task<TaxonDetalleDto> CrearTaxonAsync(CrearTaxonRequestDto request, CancellationToken cancellationToken);
+Task<TaxonDetalleDto?> ActualizarTaxonAsync(int id, ActualizarTaxonRequestDto request, CancellationToken cancellationToken);
+Task<bool> EliminarTaxonAsync(int id, CancellationToken cancellationToken);
+```
+
+**¿Endpoints en TaxonomiaController?**
+- ✗ **Posible ausencia de:**
+  ```csharp
+  [HttpPost("taxones")]
+  public async Task<ActionResult<TaxonDetalleDto>> CreateTaxonAsync([FromBody] CrearTaxonRequestDto request, CancellationToken ct)
+  
+  [HttpPut("taxones/{id:int}")]
+  public async Task<ActionResult<TaxonDetalleDto>> UpdateTaxonAsync(int id, [FromBody] ActualizarTaxonRequestDto request, CancellationToken ct)
+  
+  [HttpDelete("taxones/{id:int}")]
+  public async Task<IActionResult> DeleteTaxonAsync(int id, CancellationToken ct)
+  ```
+
+**Si faltan:** Swagger no expone estas operaciones; clientes reciben 404 al intentar POST/PUT/DELETE.
+
+---
+
+## 6. FALTA DE AUDITORÍA Y TRAZABILIDAD
+
+### 6.1 Sin columnas CreatedAt/CreatedBy en BD
+
+**Esquema actual:** No hay registro de cuándo/quién creó o modificó un taxón.
+
+**Impacto:**
+- No se puede auditar quién hizo un POST.
+- No se puede distinguir datos legacy de datos nuevos.
+- Debugging difícil ante datos inesperados.
+
+**Solución pendiente:** Agregar a `dbo.taxon`:
+```sql
+ALTER TABLE dbo.taxon
+ADD created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    created_by NVARCHAR(100) NULL,
+    updated_at DATETIME2 NULL,
+    updated_by NVARCHAR(100) NULL;
+```
+
+Y mapear en ORM:
+```csharp
+builder.Property(t => t.CreatedAt).HasColumnName("created_at").HasDefaultValue(DateTime.UtcNow);
+builder.Property(t => t.CreatedBy).HasColumnName("created_by").HasMaxLength(100);
+```
+
+---
+
+## 7. FALTA DE CORS EN Program.cs
+
+### 7.1 ¿CORS habilitado para SPA?
+
+**Estado actual:** No hay configuración CORS visible.
+
+**Problema:** Si intentas consumir la API desde React/Blazor en `localhost:3000` o `localhost:5001`:
+- Error CORS: "Access to XMLHttpRequest from origin 'http://localhost:3000' has been blocked..."
+- Respuesta: 403 Forbidden (preflight request fallido).
+
+**Solución requerida en Program.cs:**
+```csharp
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("SpaPolicy", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000", "https://localhost:5001", "http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
+// En pipeline:
+app.UseCors("SpaPolicy");
+```
+
+---
+
+## 8. LOGGING INSUFICIENTE PARA DIAGNOSTICAR RESISTENCIAS
+
+### 8.1 Configuración Actual en Program.cs
+
+```csharp
+builder.Logging.SetMinimumLevel(LogLevel.Error);
+```
+
+**Problema:** Solo muestra errores, no información de requests/respuestas.
+
+**Impacto:**
+- No se ve qué datos JSON se enviaron en POST fallido.
+- No se ve stack trace completo de excepciones.
+- Difícil reproducir 400/409/500.
+
+**Solución requerida:**
+```csharp
+builder.Logging.SetMinimumLevel(LogLevel.Debug);  // En desarrollo
+builder.Logging.AddConsole();
+
+// Middleware de logging de requests (opcional pero recomendado):
+app.Use(async (context, next) =>
+{
+    var originalBody = context.Request.Body;
+    using var ms = new MemoryStream();
+    context.Request.Body = ms;
+    
+    await ms.FlushAsync();
+    ms.Seek(0, SeekOrigin.Begin);
+    var body = new StreamReader(ms).ReadToEnd();
+    
+    app.Logger.LogInformation("Request {method} {path} Body: {body}", 
+        context.Request.Method, context.Request.Path, body);
+    
+    ms.Seek(0, SeekOrigin.Begin);
+    context.Request.Body = originalBody;
+    
+    await next();
+});
+```
+
+---
+
+## 9. TABLA DE RESISTENCIAS CONSOLIDADA
+
+| # | Código | Causa | Solución |
+|----|--------|-------|----------|
+| 1 | 400 | Binding JSON incorrecto (nombres de campos) | Revisar nombres en DTO vs JSON enviado |
+| 2 | 400 | Validación: EstadoConservacion no en lista (case-sensitive) | Normalizar entrada (ToUpper) o flexibilizar HashSet |
+| 3 | 400 | Validación: nombre vacío/null | Enviar nombre válido |
+| 4 | 400 | Validación: NombreComun vacío/null | Enviar NombreComun obligatorio |
+| 5 | 409 | Duplicado (nombre + rankId) | Usar nombre único o rankId distinto |
+| 6 | 500 | Conexión BD fallida (LocalDB no disponible) | Iniciar (localdb)\MSSQLLocalDB, revisar ConnectionString |
+| 7 | 500 | Columnas snake_case no mapeadas en EF (CommonName vs common_name) | Agregar HasColumnName(...) en configurations |
+| 8 | 500 | FK rankId inválido | Usar rankId que existe en tabla rank |
+| 9 | 500 | DbUpdateException no maneada | Manejar en controller y traducir a 409/400 |
+| 10 | 404 | Endpoints POST/PUT/DELETE no expuestos | Agregar [HttpPost]/[HttpPut]/[HttpDelete] en controller |
+| 11 | 403 CORS | SPA no autorizada para consumir API | Configurar AddCors + UseCors en Program.cs |
+| 12 | N/A | Sin auditoría de inserciones | Agregar CreatedAt/CreatedBy en BD y ORM |
+
+---
+
+## 10. CHECKLIST DE CORRECCIONES PRIORITARIAS
+
+**Por hacer (orden de impacto):**
+
+1. ✗ Agregar/verificar configuraciones EF (TaxonConfiguration, SpeciesInfoConfiguration, RankConfiguration) con HasColumnName().
+2. ✗ Exponer endpoints POST/PUT/DELETE en TaxonomiaController.
+3. ✗ Configurar CORS en Program.cs para consumo desde SPA.
+4. ✗ Flexibilizar validación EstadoConservacion (case-insensitive o desde tabla lookup).
+5. ✗ Agregar manejo de DbUpdateException → traducir a 409/400.
+6. ✗ Incrementar logging en desarrollo (SetMinimumLevel = Debug).
+7. ✗ Agregar columnas auditoría a BD y ORM (opcional pero recomendado).
+8. ✗ Normalizar nullabilidad (BD permite NULL para name, pero API rechaza).
+
+---
+
+## 11. RESUMEN FINAL
+
+La solución tiene arquitectura sólida pero sufre **desalineación crítica entre esquema legacy y ORM**, causando fricción en operaciones CRUD. Las resistencias (400/409/500) son **síntomas de:**
+- Falta de mapeo explícito snake_case ↔ PascalCase.
+- Validaciones estrictas sin flexibilidad.
+- Endpoints de escritura no expuestos o incompletos.
+- CORS no configurado para SPA.
+- Logging insuficiente para diagnosticar.
+
+**Impacto en SPA:** Un frontend React/Blazor recibe errores vago (400/500) sin contexto, dificultando fix rápidos.
+
+**Tiempo de correción estimado:** 2-4 horas (configurations + endpoints + CORS + logging).

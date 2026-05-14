@@ -1,0 +1,42 @@
+﻿# BirdTaxonomyDbContext - Contexto para Codex / ChatGPT
+
+Archivo: BirdTaxonomy.API/Persistence/BirdTaxonomyDbContext.cs
+Clase: BirdTaxonomy.API.Persistence.BirdTaxonomyDbContext
+Registro en contenedor: BirdTaxonomy.API/Program.cs
+
+Clave de configuración esperada (appsettings.json):
+- ConnectionStrings:BirdTaxonomyDb
+
+Servidor y base de datos solicitados:
+- Server: (localdb)\\MSSQLLocalDB
+- Database: Ave
+
+Proveedor recomendado:
+- Microsoft.EntityFrameworkCore.SqlServer
+
+Cadena de conexión de ejemplo (appsettings.json):
+Server=(localdb)\\MSSQLLocalDB;Database=Ave;Trusted_Connection=True;MultipleActiveResultSets=true
+
+Snippet mínimo para Program.cs (cómo se registra el DbContext):
+var connectionString = builder.Configuration.GetConnectionString("BirdTaxonomyDb");
+builder.Services.AddDbContext<BirdTaxonomyDbContext>(options =>
+    options.UseSqlServer(connectionString));
+
+Paquetes NuGet necesarios:
+- Microsoft.EntityFrameworkCore.SqlServer
+- (opcional) Microsoft.EntityFrameworkCore.Design
+
+Comandos útiles (CLI):
+- dotnet add package Microsoft.EntityFrameworkCore.SqlServer
+- dotnet tool install --global dotnet-ef
+- dotnet ef migrations add InitialCreate
+- dotnet ef database update
+
+Archivos relevantes en el proyecto:
+- BirdTaxonomy.API/Program.cs
+- BirdTaxonomy.API/Persistence/BirdTaxonomyDbContext.cs
+- BirdTaxonomy.API/Persistence/Configurations/*.cs
+- BirdTaxonomy.API/appsettings.json (crear si no existe)
+
+Propósito de este archivo:
+Proveer a Codex/ChatGPT la información mínima y directa para localizar y entender la configuración de conexión del DbContext en este proyecto.

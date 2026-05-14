@@ -1,0 +1,38 @@
+﻿using BirdTaxonomy.API.Application.Contracts.Persistence;
+using BirdTaxonomy.API.Application.Contracts.Repositories;
+using BirdTaxonomy.API.Application.Contracts.Services;
+using BirdTaxonomy.API.Application.Services;
+using BirdTaxonomy.API.Infrastructure.Persistence;
+using BirdTaxonomy.API.Infrastructure.Repositories;
+using BirdTaxonomy.API.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+builder.Services.AddDbContext<BirdTaxonomyDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("BirdTaxonomyDb");
+    options.UseSqlServer(connectionString);
+});
+
+builder.Services.AddScoped<ICladoRepository, CladoRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<ITaxonomiaService, TaxonomiaService>();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();

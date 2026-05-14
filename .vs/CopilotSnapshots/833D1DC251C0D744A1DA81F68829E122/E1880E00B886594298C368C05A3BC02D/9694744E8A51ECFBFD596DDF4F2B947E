@@ -1,0 +1,172 @@
+﻿# Recomendación: Agregar Operaciones de Escritura (POST, PUT, DELETE) a la API
+
+## Estado Actual
+
+La API **sólo tiene operaciones GET (lectura)**:
+- `GET /api/taxonomia/rangos` → Lista rangos
+- `GET /api/taxonomia/taxones` → Lista taxones
+- `GET /api/taxonomia/taxones/{id}` → Detalle de taxón
+
+**Problema**: No puedes:
+- Crear nuevos taxones (nombres científicos, jerarquía taxonómica)
+- Actualizar datos existentes
+- Eliminar registros obsoletos
+
+---
+
+## Recomendación: Agregar Endpoints de Escritura
+
+### 1. POST - Crear Nuevo Taxón
+
+**Endpoint**: `POST /api/taxonomia/taxones`
+
+**Request Body**:
+```json
+{
+  "nombre": "Aves",
+  "rankId": 1,
+  "especiesInfo": {
+    "nombreComun": "Aves",
+    "descripcion": "Clase de vertebrados",
+    "domesticated": false,
+    "estadoConservacion": "Stable",
+    "ubicacionGeografica": "Global"
+  }
+}
+```
+
+**Response**: 
+- `201 Created` → Retorna el taxón creado con su ID
+- `400 Bad Request` → Validaciones fallidas (nombre vacío, rankId inválido)
+- `409 Conflict` → El taxón ya existe
+
+**DTO necesario**:
+```csharp
+public sealed class CrearTaxonRequestDto
+{
+    public string Nombre { get; init; } = string.Empty;
+    public int RankId { get; init; }
+    public CrearEspeciesInfoRequestDto? EspeciesInfo { get; init; }
+}
+
+public sealed class CrearEspeciesInfoRequestDto
+{
+    public string NombreComun { get; init; } = string.Empty;
+    public string? Descripcion { get; init; }
+    public bool Domesticated { get; init; }
+    public string? EstadoConservacion { get; init; }
+    public string? UbicacionGeografica { get; init; }
+}
+```
+
+---
+
+### 2. PUT - Actualizar Taxón Existente
+
+**Endpoint**: `PUT /api/taxonomia/taxones/{id}`
+
+**Request Body**:
+```json
+{
+  "nombre": "Aves (Actualizado)",
+  "rankId": 1,
+  "especiesInfo": {
+    "nombreComun": "Aves",
+    "descripcion": "Clase de vertebrados voladores",
+    "domesticated": false,
+    "estadoConservacion": "Stable",
+    "ubicacionGeografica": "Global"
+  }
+}
+```
+
+**Response**:
+- `200 OK` → Taxón actualizado
+- `404 Not Found` → Taxón no existe
+- `400 Bad Request` → Validaciones fallidas
+- `409 Conflict` → El nombre ya existe en otro taxón
+
+**DTO necesario**:
+```csharp
+public sealed class ActualizarTaxonRequestDto
+{
+    public string Nombre { get; init; } = string.Empty;
+    public int RankId { get; init; }
+    public ActualizarEspeciesInfoRequestDto? EspeciesInfo { get; init; }
+}
+
+public sealed class ActualizarEspeciesInfoRequestDto
+{
+    public string NombreComun { get; init; } = string.Empty;
+    public string? Descripcion { get; init; }
+    public bool Domesticated { get; init; }
+    public string? EstadoConservacion { get; init; }
+    public string? UbicacionGeografica { get; init; }
+}
+```
+
+---
+
+### 3. DELETE - Eliminar Taxón
+
+**Endpoint**: `DELETE /api/taxonomia/taxones/{id}`
+
+**Response**:
+- `204 No Content` → Eliminado correctamente
+- `404 Not Found` → Taxón no existe
+- `409 Conflict` → No se puede eliminar (tiene dependencias, p. ej. especies asociadas)
+
+---
+
+## Métodos Necesarios en Servicios
+
+### En `ITaxonomiaConsultaService` (agregar):
+
+```csharp
+Task<TaxonDetalleDto> CrearTaxonAsync(CrearTaxonRequestDto request, CancellationToken cancellationToken = default);
+Task<TaxonDetalleDto> ActualizarTaxonAsync(int id, ActualizarTaxonRequestDto request, CancellationToken cancellationToken = default);
+Task<bool> EliminarTaxonAsync(int id, CancellationToken cancellationToken = default);
+```
+
+### En `TaxonomiaConsultaService` (implementar):
+
+- **CrearTaxonAsync**: Validar datos, crear Taxón + SpeciesInfo (si aplica), guardar.
+- **ActualizarTaxonAsync**: Buscar taxón, actualizar propiedades, guardar cambios.
+- **EliminarTaxonAsync**: Verificar dependencias, eliminar si es seguro.
+
+---
+
+## Validaciones Recomendadas
+
+| Campo | Validación |
+|-------|-----------|
+| `Nombre` | No vacío, longitud 1-255, único por Rank |
+| `RankId` | Debe existir en tabla Ranks |
+| `NombreComun` | Longitud máx. 200 caracteres |
+| `Descripcion` | Longitud máx. 1000 caracteres |
+| `EstadoConservacion` | Valores permitidos: LC, NT, VU, EN, CR, EX, etc. |
+
+---
+
+## Flujo de Cambios Recomendado
+
+1. Crear DTOs (`CrearTaxonRequestDto`, `ActualizarTaxonRequestDto`).
+2. Agregar métodos en `ITaxonomiaConsultaService`.
+3. Implementar lógica en `TaxonomiaConsultaService`.
+4. Agregar endpoints en `TaxonomiaController` (POST, PUT, DELETE).
+5. Documentar en Swagger.
+6. Validar y testear.
+
+---
+
+## Estado de Implementación
+
+- ✗ DTOs de creación/actualización: **No existen**
+- ✗ Métodos de escritura en Service: **No existen**
+- ✗ Endpoints POST/PUT/DELETE: **No existen**
+- ✓ Infraestructura (Repositories, UnitOfWork): **Ya existe**
+- ✓ Validaciones básicas: **A diseñar**
+
+---
+
+**Próximo paso**: ¿Deseas que Codex implemente estos endpoints y DTOs?

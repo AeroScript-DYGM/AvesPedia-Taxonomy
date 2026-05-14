@@ -1,0 +1,48 @@
+﻿# Contexto de conexión para Codex / ChatGPT
+
+Este archivo proporciona la información mínima necesaria para que herramientas automáticas (Codex/ChatGPT) entiendan cómo conectar el DbContext del proyecto.
+
+Proyecto: BirdTaxonomy.API
+DbContext: BirdTaxonomy.API.Persistence.BirdTaxonomyDbContext
+Archivo DbContext: BirdTaxonomy.API/Persistence/BirdTaxonomyDbContext.cs
+Registro en Program.cs: BirdTaxonomy.API/Program.cs
+
+Configuración de conexión esperada (clave):
+- ConnectionStrings:BirdTaxonomyDb
+
+Servidor y base de datos (solicitado):
+- Server: (localdb)\\MSSQLLocalDB
+- Database: Ave
+
+Proveedor recomendado: Microsoft.EntityFrameworkCore.SqlServer
+
+Ejemplo de appsettings.json:
+
+```json
+{
+  "ConnectionStrings": {
+    "BirdTaxonomyDb": "Server=(localdb)\\MSSQLLocalDB;Database=Ave;Trusted_Connection=True;MultipleActiveResultSets=true"
+  }
+}
+```
+
+Ejemplo mínimo en Program.cs (registro del DbContext):
+
+```csharp
+var connectionString = builder.Configuration.GetConnectionString("BirdTaxonomyDb");
+builder.Services.AddDbContext<BirdTaxonomyDbContext>(options =>
+    options.UseSqlServer(connectionString));
+```
+
+Paquetes NuGet necesarios:
+- Microsoft.EntityFrameworkCore.SqlServer
+
+Comandos útiles (CLI):
+- dotnet add package Microsoft.EntityFrameworkCore.SqlServer
+- dotnet tool install --global dotnet-ef
+- dotnet ef migrations add InitialCreate
+- dotnet ef database update
+
+Notas:
+- Si desea seguir usando SQLite en algunos entornos, mantenga múltiples cadenas de conexión y condicione el provider según el entorno.
+- Este archivo solo es referencia; los archivos fuente reales son Program.cs y appsettings.json.
