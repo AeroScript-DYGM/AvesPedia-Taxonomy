@@ -1,47 +1,77 @@
-***
-
 # ADR-004 — Evaluación Técnica y Auditoría de Arquitectura
 
 ## Estado
-Aceptado
+✅ Aceptado
 
 ## Fecha
 2026-05-14
 
+---
+
 ## Contexto
-Se ha realizado una auditoría integral del repositorio **BirdTaxonomy (AvesPedia)** para evaluar su cumplimiento con los principios de *Clean Architecture*, la consistencia de su base de datos legada y su preparación para entornos de producción. Esta evaluación sirve como hoja de ruta para las fases de refactorización y expansión del sistema.
+
+Se ha realizado una auditoría integral del repositorio **BirdTaxonomy (AvesPedia)** para evaluar su cumplimiento con los principios de *Clean Architecture*, la consistencia de su base de datos legada y la integración de orquestación de IA multi-agente. Esta evaluación busca establecer un baseline de calidad arquitectónica antes de escalamiento y despliegue en producción.
+
+---
 
 ## Decisión
-Se documentan formalmente los hallazgos de la auditoría técnica, categorizando las capacidades actuales, las deficiencias críticas y las acciones recomendadas para asegurar la escalabilidad y seguridad del sistema.
+
+Se documentan formalmente los hallazgos de la auditoría técnica, categorizando las capacidades actuales, las deficiencias críticas y las acciones recomendadas para asegurar la escalabilidad y seguridad del sistema. Los resultados se han sintetizado mediante análisis de *FORTALEZAS-DEBILIDADES-RIESGOS-BRECHAS-OPORTUNIDADES (SWOT mejorado)*.
+
+---
 
 ## Consecuencias
 
-### 1. Fortalezas (Strengths)
-*   **Cumplimiento de Arquitectura Limpia:** El sistema mantiene una separación lógica estricta entre las capas de Presentación, Aplicación, Dominio, Infraestructura y Persistencia.
-*   **Orquestación de IA:** El uso de un flujo de trabajo multi-agente (Copilot, Codex, Claude, NotebookLM) garantiza una síntesis de conocimiento y consistencia técnica superior.
-*   **Adaptación de Datos Legados:** Se ha logrado mapear un esquema científico existente (`rank`, `taxon`, `species_info`) utilizando Entity Framework Core sin degradar la integridad del esquema físico.
-*   **Documentación Exhaustiva:** El repositorio cuenta con artefactos de alta calidad, incluyendo diagramas UML, ER y registros de decisiones previas.
+### 1. Fortalezas (Strengths) ✨
 
-### 2. Debilidades (Weaknesses)
-*   **Estructura Física Monolítica:** A pesar de la separación lógica, el código reside en un solo proyecto físico, lo que aumenta el riesgo de acoplamiento accidental.
-*   **Inexistencia de Seguridad:** La autenticación y autorización están marcadas explícitamente como "fuera de alcance", lo que impide el uso del sistema en un entorno de producción abierto.
-*   **Gestión de Identificadores:** El uso de IDs no identitarios en la tabla `taxon` requiere una gestión manual que es propensa a errores en escenarios de alta concurrencia.
+- **Cumplimiento de Arquitectura Limpia:** El sistema mantiene una separación lógica estricta entre las capas de Presentación, Aplicación, Dominio, Infraestructura y Persistencia.
+- **Orquestación de IA:** El uso de un flujo de trabajo multi-agente (Copilot, Codex, Claude, NotebookLM) garantiza una síntesis de conocimiento y consistencia técnica superior.
+- **Adaptación de Datos Legados:** Se ha logrado mapear un esquema científico existente (`rank`, `taxon`, `species_info`) utilizando Entity Framework Core sin degradar la integridad del esquema físico.
+- **Documentación Exhaustiva:** El repositorio cuenta con artefactos de alta calidad, incluyendo diagramas UML, ER y registros de decisiones previas (ADR-001 a ADR-003).
 
-### 3. Riesgos Técnicos (Technical Risks)
-*   **Calidad de Datos del Legado:** Riesgo de inconsistencias como registros huérfanos o relaciones 1:1 mal formadas provenientes de la base de datos original.
-*   **Deriva de Contexto en IA:** El riesgo de que las herramientas de IA generen código que viole las fronteras arquitectónicas si no se mantiene el "Context Engineering" actualizado.
-*   **Dependencia de Hosting Compartido:** Las limitaciones de MonsterASP.NET restringen la personalización de la infraestructura y el escalado automático.
+### 2. Debilidades (Weaknesses) ⚠️
 
-### 4. Brechas de Documentación (Documentation Gaps)
-*   **Plan de Seguridad:** Falta una especificación técnica sobre la futura integración de JWT u OAuth.
-*   **Estrategia de Observabilidad:** No se detallan métricas de salud (Health Checks) ni trazado distribuido para diagnóstico de errores.
+- **Estructura Física Monolítica:** A pesar de la separación lógica, el código reside en un solo proyecto físico, lo que aumenta el riesgo de acoplamiento accidental entre capas.
+- **Inexistencia de Seguridad:** La autenticación y autorización están marcadas explícitamente como "fuera de alcance", lo que impide el uso del sistema en un entorno de producción abierto.
+- **Gestión de Identificadores:** El uso de IDs no identitarios en la tabla `taxon` requiere una gestión manual que es propensa a errores en escenarios de alta concurrencia.
 
-### 5. Oportunidades de Investigación (Research Opportunities)
-*   **Automatización Taxonómica:** Uso de agentes para la validación científica automática de las jerarquías de aves.
-*   **Sostenibilidad y ESG:** Posicionamiento de la plataforma para estudios de biodiversidad y conservación basados en datos.
+### 3. Riesgos Técnicos (Technical Risks) 🔴
 
-## Recomendaciones (Recommendations)
-1.  **Segregación Física:** Mover a una solución de múltiples proyectos (.csproj) para forzar las reglas de dependencia de la Arquitectura Limpia.
-2.  **Implementación de Seguridad:** Priorizar una capa de seguridad base antes de cualquier despliegue público.
-3.  **Contenedorización:** Adoptar Docker como estándar de despliegue para eliminar la dependencia de configuraciones específicas del host.
-4.  **Validación de Contexto:** Implementar la "Estrategia 2" de ingeniería de contexto mediante analizadores estáticos para validar el código generado por IA.
+- **Calidad de Datos del Legado:** Riesgo de inconsistencias como registros huérfanos o relaciones 1:1 mal formadas provenientes de la base de datos original.
+- **Deriva de Contexto en IA:** El riesgo de que las herramientas de IA generen código que viole las fronteras arquitectónicas si no se mantiene el "Context Engineering" actualizado.
+- **Dependencia de Hosting Compartido:** Las limitaciones de MonsterASP.NET restringen la personalización de la infraestructura y el escalado automático.
+
+### 4. Brechas de Documentación (Documentation Gaps) 📋
+
+- **Plan de Seguridad:** Falta una especificación técnica sobre la futura integración de JWT u OAuth.
+- **Estrategia de Observabilidad:** No se detallan métricas de salud (Health Checks) ni trazado distribuido para diagnóstico de errores.
+
+### 5. Oportunidades de Investigación (Research Opportunities) 🚀
+
+- **Automatización Taxonómica:** Uso de agentes para la validación científica automática de las jerarquías de aves.
+- **Sostenibilidad y ESG:** Posicionamiento de la plataforma para estudios de biodiversidad y conservación basados en datos.
+
+---
+
+## Recomendaciones (Roadmap de Acciones)
+
+| # | Acción | Prioridad | Impacto | Timeline |
+|---|--------|-----------|--------|----------|
+| 1 | Segregación Física: Mover a múltiples proyectos (.csproj) | 🔴 Alta | Crítico | Q3 2026 |
+| 2 | Implementación de Seguridad (JWT/OAuth) | 🔴 Alta | Crítico | Q2-Q3 2026 |
+| 3 | Contenedorización con Docker | 🟡 Media | Alto | Q3 2026 |
+| 4 | Validación de Contexto (Context Engineering Strategy 2) | 🟡 Media | Alto | Q4 2026 |
+| 5 | Observabilidad e Health Checks | 🟡 Media | Medio | Q4 2026 |
+
+---
+
+## Notas Adicionales
+
+> **Reparación de Datos:** Se recomienda ejecutar un script de validación de integridad referencial antes de cualquier migración a producción.
+
+> **Next Steps:** Priorizar la implementación de seguridad (ADR-005) y segregación física (ADR-006) en el próximo sprint.
+
+---
+
+*Documento generado por auditoría técnica integrada (Copilot + NotebookLM + Claude)*
+*Última actualización: 2026-05-15*
