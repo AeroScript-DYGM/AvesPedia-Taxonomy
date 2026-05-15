@@ -84,7 +84,7 @@ Agents used during development:
 
 - OpenAI Codex → implementation and refactoring
 - GitHub Copilot → validation and consistency review
-- NotebookLM → documentation and knowledge synthesis
+- NotebookLM → documentation and knowledge synthesis: https://notebooklm.google.com/notebook/d1334c94-ac55-4cb5-9f99-ca6af191d135 
 
 ---
 
